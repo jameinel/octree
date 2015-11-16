@@ -92,6 +92,10 @@ func (o *Octree) findBlockMinMax(bindex uint32) (vMin, vMax value) {
 }
 
 func (o *Octree) findMinDist2ToBoundary(r, g, b uint8, vMin, vMax value) uint32 {
+	// TODO: take into account global boundaries.
+	// For example, if a point is at (1,1,1), we don't care that we are very
+	// close to the is a boundary at (0,0,0), there can't be any points out
+	// there. That will help us avoid expanding our search unnecessarily
 	dist2 := uint32(r) - uint32(vMin.r)
 	dist2 *= dist2
 	minDist2 := dist2
@@ -125,9 +129,9 @@ func (o *Octree) findMinDist2ToBoundary(r, g, b uint8, vMin, vMax value) uint32 
 
 func (o *Octree) FindClosest(r, g, b uint8) value {
 	index := interleaveRGB(r, g, b)
-	viShift := uint(24 - len(o.layerCounts)*3)
-	vi := index >> viShift
-	valueSlice := o.values[vi]
+	shift := uint(24 - len(o.layerCounts)*3)
+	blockIndex := index >> shift
+	valueSlice := o.values[blockIndex]
 	// Pass through looking for an exact match
 	for _, v := range valueSlice {
 		// Nothing will ever be closer than an exact match
@@ -149,7 +153,7 @@ func (o *Octree) FindClosest(r, g, b uint8) value {
 		// We found something in this block, but we might be close
 		// enough to an edge that the next block holds things that are
 		// actually closer, check where our boundary ends
-		vMin, vMax := o.findBlockMinMax(vi)
+		vMin, vMax := o.findBlockMinMax(blockIndex)
 		minDist2 := o.findMinDist2ToBoundary(r, g, b, vMin, vMax)
 		if closestDist2 < minDist2 {
 			// nothing outside of this block could be closer than
@@ -157,9 +161,32 @@ func (o *Octree) FindClosest(r, g, b uint8) value {
 			return *closest
 		}
 	}
-	// TODO: We should start by checking the 26-neighbors of this block,
-	// and then possibly expand to bigger and bigger regions, rather than
-	// going straight to brute force.
+	// Now check the 26 nearest neighbors
+	blocks, vMin, vMax := o.find26NeighborBlocks(blockIndex)
+	for _, block := range blocks {
+		// TODO: if we have lots of values we could look at the block and see
+		// if our current minimum distance is less than anything that could be
+		// in the block, and not even search this block.
+		for _, v := range o.values[block] {
+			dist2 := dist2ToV(r, g, b, v)
+			if closest == nil || dist2 < closestDist2 {
+				closestDist2 = dist2
+				closest = v
+			}
+		}
+	}
+	if closest != nil {
+		// We found something in these blocks, but we might be close
+		// enough to an edge that we need to expand our search.
+		minDist2 := o.findMinDist2ToBoundary(r, g, b, vMin, vMax)
+		if closestDist2 < minDist2 {
+			// nothing outside of this block could be closer than
+			// what we found, so we're safe to return it
+			return *closest
+		}
+	}
+	// TODO: we could actually switch to a sort of 'spiral' out search, instead
+	// of falling back to brute force.
 	// No exact match, start with brute-force search
 	for _, values := range o.values {
 		for _, v := range values {
@@ -190,7 +217,8 @@ func getBoundedNeighbor(v, max uint8) (uint8, uint8) {
 }
 
 // Find all of the blocks that are next to this one.
-func (o *Octree) find26NeighborBlocks(bindex uint32) []uint32 {
+// Also include the minimum and maximum boundary of the larger blocks
+func (o *Octree) find26NeighborBlocks(bindex uint32) ([]uint32, value, value) {
 	// Technically, this is only the 'high order' r g b bits shifted by
 	// layer, but it works for finding the correct neighbor indexes
 	r, g, b := interleavedToRGB(bindex)
@@ -198,6 +226,8 @@ func (o *Octree) find26NeighborBlocks(bindex uint32) []uint32 {
 	rMin, rMax := getBoundedNeighbor(r, max)
 	gMin, gMax := getBoundedNeighbor(g, max)
 	bMin, bMax := getBoundedNeighbor(b, max)
+	vMin := value{r: rMin, g: gMin, b: bMin}
+	vMax := value{r: rMax, g: gMax, b: bMax}
 	neighbors := make([]uint32, 0, 26)
 	// Note: we don't have to worry about overflowing uint8 because
 	// len(layerCounts) is always at least 1
@@ -215,17 +245,7 @@ func (o *Octree) find26NeighborBlocks(bindex uint32) []uint32 {
 			}
 		}
 	}
-	return neighbors
-}
-
-// Grab all of the values in the 26 neighbors of this block.
-// The 26 neighbors is the 3x3x3 grid excluding the block itself.
-// This also knows that it can ignore going past 0 or above 255.
-// This also returns the distance to the closest boundary for which there might
-// be more points (so if you are at r=0x01, we don't return the distance to 0,
-// because there can't be any points on the other side.)
-func (o *Octree) find26NeighborValues(bindex uint32) ([]*value, uint32) {
-	return nil, 0
+	return neighbors, vMin, vMax
 }
 
 // This is a mapping from 0-256 uint8 into a spread bits format, where each bit

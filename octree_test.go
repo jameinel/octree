@@ -293,22 +293,27 @@ func (*OctTreeSuite) TestFind26NeighborBlocks2Layer(c *check.C) {
 	oct, err := NewOctree(2)
 	c.Assert(err, check.IsNil)
 	c.Assert(len(oct.values), check.Equals, 8)
-	c.Check(oct.find26NeighborBlocks(0), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 0,
 		[]uint32{1, 2, 3, 4, 5, 6, 7})
-	c.Check(oct.find26NeighborBlocks(1), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 1,
 		[]uint32{0, 2, 3, 4, 5, 6, 7})
-	c.Check(oct.find26NeighborBlocks(2), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 2,
 		[]uint32{0, 1, 3, 4, 5, 6, 7})
-	c.Check(oct.find26NeighborBlocks(3), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 3,
 		[]uint32{0, 1, 2, 4, 5, 6, 7})
-	c.Check(oct.find26NeighborBlocks(4), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 4,
 		[]uint32{0, 1, 2, 3, 5, 6, 7})
-	c.Check(oct.find26NeighborBlocks(5), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 5,
 		[]uint32{0, 1, 2, 3, 4, 6, 7})
-	c.Check(oct.find26NeighborBlocks(6), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 6,
 		[]uint32{0, 1, 2, 3, 4, 5, 7})
-	c.Check(oct.find26NeighborBlocks(7), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 7,
 		[]uint32{0, 1, 2, 3, 4, 5, 6})
+}
+
+func check26NeighborBlocks(c *check.C, oct *Octree, loc uint32, exp []uint32) {
+	neighbors, _, _ := oct.find26NeighborBlocks(loc)
+	c.Check(neighbors, check.DeepEquals, exp)
 }
 
 func (*OctTreeSuite) TestFind26NeighborBlocks3Layer(c *check.C) {
@@ -317,12 +322,12 @@ func (*OctTreeSuite) TestFind26NeighborBlocks3Layer(c *check.C) {
 	oct, err := NewOctree(3)
 	c.Assert(err, check.IsNil)
 	c.Assert(len(oct.values), check.Equals, 64)
-	c.Check(oct.find26NeighborBlocks(0), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 0,
 		[]uint32{1, 2, 3, 4, 5, 6, 7})
 	// 7 should be the first block to have all 26 neighbors, the order here
 	// is because we iterate in r,g,b order, but the indices are morton
 	// order.
-	c.Check(oct.find26NeighborBlocks(7), check.DeepEquals,
+	check26NeighborBlocks(c, oct, 7,
 		[]uint32{
 			// r = 0, g,b = [0, 2]
 			0x00, 0x01, 0x08,
@@ -336,29 +341,5 @@ func (*OctTreeSuite) TestFind26NeighborBlocks3Layer(c *check.C) {
 			0x20, 0x21, 0x28,
 			0x22, 0x23, 0x2a,
 			0x30, 0x31, 0x38,
-		})
-}
-
-func (*OctTreeSuite) TestFind26NeighborValues3Layer(c *check.C) {
-	oct, err := NewOctree(3)
-	c.Assert(err, check.IsNil)
-	c.Assert(len(oct.values), check.Equals, 64)
-	// Add a value into every block, so that we can see we found them
-	for r := 0; r < 0x100; r += 64 {
-		for g := 4; g < 0x100; g += 64 {
-			for b := 8; b < 0x100; b += 64 {
-				oct.Add(uint8(r), uint8(g), uint8(b))
-				oct.Add(uint8(r+1), uint8(g), uint8(b))
-				oct.Add(uint8(r), uint8(g+1), uint8(b))
-				oct.Add(uint8(r), uint8(g), uint8(b+1))
-			}
-		}
-	}
-	c.Check(oct.count, check.Equals, uint32(256))
-	c.Check(oct.layerCounts[1], check.DeepEquals,
-		[]uint32{4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-			4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-			4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-			4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
 		})
 }
