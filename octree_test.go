@@ -201,12 +201,35 @@ func (*OctTreeSuite) TestFindClosestWithDistraction(c *check.C) {
 	oct, err := NewOctree(3)
 	c.Assert(err, check.IsNil)
 	c.Assert(oct, check.NotNil)
-	// with depth=3 the top 2 bits are consumed in the octree
-	oct.Add(0x20, 0x00, 0x00)
-	index := interleaveRGB(0x20, 0x00, 0x00)
-	c.Check(index, check.Equals, uint32(0x020000))
-	// TODO
-	// c.Check(oct.layerCounts[4][index>>8], check.Equals, 1)
+	// We create one just on the boundary of its block
+	oct.Add(0x40, 0x00, 0x00)
+	index := interleaveRGB(0x40, 0x00, 0x00)
+	c.Check(index, check.Equals, uint32(0x100000))
+	// the r=0x40 ends up in the 4th block
+	c.Check(index>>18, check.Equals, uint32(4))
+	c.Check(oct.values[4], check.DeepEquals,
+		[]*value{
+			&value{r: 0x40, g: 0x00, b: 0x00, count: 1},
+		})
+	// We add another one that is in the first block, but will actually be
+	// farther than our search location.
+	oct.Add(0x00, 0x00, 0x00)
+	index = interleaveRGB(0x00, 0x00, 0x00)
+	c.Check(index, check.Equals, uint32(0x000000))
+	c.Check(index>>18, check.Equals, uint32(0))
+	// the r=0x40 ends up in the 4th block
+	c.Check(oct.values[0], check.DeepEquals,
+		[]*value{
+			&value{r: 0x00, g: 0x00, b: 0x00, count: 1},
+		})
+	c.Check(oct.values[4], check.DeepEquals,
+		[]*value{
+			&value{r: 0x40, g: 0x00, b: 0x00, count: 1},
+		})
+	// Now we search for the very edge of the first block, which should
+	// find the item in the other block.
+	c.Check(oct.FindClosest(0x39, 0, 0), check.DeepEquals,
+		value{r: 0x40, g: 0, b: 0, count: 1})
 }
 
 func (*OctTreeSuite) TestFindClosestNextOctree(c *check.C) {
