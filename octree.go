@@ -176,6 +176,58 @@ func (o *Octree) FindClosest(r, g, b uint8) value {
 	return *closest
 }
 
+// Get a 'neighbor' one less and one greater the value, but cap it at [0,max]
+func getBoundedNeighbor(v, max uint8) (uint8, uint8) {
+	vMin := v
+	if v > 0 {
+		vMin = v - 1
+	}
+	vMax := v
+	if v < max {
+		vMax = v + 1
+	}
+	return vMin, vMax
+}
+
+// Find all of the blocks that are next to this one.
+func (o *Octree) find26NeighborBlocks(bindex uint32) []uint32 {
+	// Technically, this is only the 'high order' r g b bits shifted by
+	// layer, but it works for finding the correct neighbor indexes
+	r, g, b := interleavedToRGB(bindex)
+	max := uint8(0x01) << uint(len(o.layerCounts)-1)
+	rMin, rMax := getBoundedNeighbor(r, max)
+	gMin, gMax := getBoundedNeighbor(g, max)
+	bMin, bMax := getBoundedNeighbor(b, max)
+	neighbors := make([]uint32, 0, 26)
+	// Note: we don't have to worry about overflowing uint8 because
+	// len(layerCounts) is always at least 1
+	// TODO: We walk in r,g,b order, but the blocks in memory are stored in
+	// morton order, for memory purposes, wouldn't it be better to use morton
+	// ordering for the blocks?
+	for rr := rMin; rr <= rMax; rr++ {
+		for gg := gMin; gg <= gMax; gg++ {
+			for bb := bMin; bb <= bMax; bb++ {
+				if rr == r && gg == g && bb == b {
+					continue
+				}
+				idx := interleaveRGB(rr, gg, bb)
+				neighbors = append(neighbors, idx)
+			}
+		}
+	}
+	return neighbors
+}
+
+// Grab all of the values in the 26 neighbors of this block.
+// The 26 neighbors is the 3x3x3 grid excluding the block itself.
+// This also knows that it can ignore going past 0 or above 255.
+// This also returns the distance to the closest boundary for which there might
+// be more points (so if you are at r=0x01, we don't return the distance to 0,
+// because there can't be any points on the other side.)
+func (o *Octree) find26NeighborValues(bindex uint32) ([]*value, uint32) {
+	return nil, 0
+}
+
 // This is a mapping from 0-256 uint8 into a spread bits format, where each bit
 // in the input gets spread out into the output. (eg 0011 => 000 000 001 001)
 // The table itself comes from
