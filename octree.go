@@ -78,9 +78,54 @@ func dist2ToV(r, g, b uint8, v *value) uint32 {
 	return dist2
 }
 
+// Given an index into the values slice, figure out what the min and max values
+// for that block would be. This is a inclusive boundary [min, max] (max and
+// min are inside the block)
+func (o *Octree) findBlockMinMax(bindex uint32) (vMin, vMax value) {
+	blockShift := uint(24 - len(o.layerCounts)*3)
+	index := bindex << blockShift
+	rMin, gMin, bMin := interleavedToRGB(index)
+	stride := uint8(0xFF) >> uint(len(o.layerCounts))
+	vMin = value{r: rMin, g: gMin, b: bMin}
+	vMax = value{r: rMin + stride, g: gMin + stride, b: bMin + stride}
+	return vMin, vMax
+}
+
+func (o *Octree) findMinDist2ToBoundary(r, g, b uint8, vMin, vMax value) uint32 {
+	dist2 := uint32(r) - uint32(vMin.r)
+	dist2 *= dist2
+	minDist2 := dist2
+	dist2 = uint32(g) - uint32(vMin.g)
+	dist2 *= dist2
+	if dist2 < minDist2 {
+		minDist2 = dist2
+	}
+	dist2 = uint32(b) - uint32(vMin.b)
+	dist2 *= dist2
+	if dist2 < minDist2 {
+		minDist2 = dist2
+	}
+	dist2 = uint32(vMax.r) - uint32(r)
+	dist2 *= dist2
+	if dist2 < minDist2 {
+		minDist2 = dist2
+	}
+	dist2 = uint32(vMax.g) - uint32(g)
+	dist2 *= dist2
+	if dist2 < minDist2 {
+		minDist2 = dist2
+	}
+	dist2 = uint32(vMax.b) - uint32(b)
+	dist2 *= dist2
+	if dist2 < minDist2 {
+		minDist2 = dist2
+	}
+	return minDist2
+}
+
 func (o *Octree) FindClosest(r, g, b uint8) value {
 	index := interleaveRGB(r, g, b)
-	viShift := uint(24-len(o.layerCounts)*3)
+	viShift := uint(24 - len(o.layerCounts)*3)
 	vi := index >> viShift
 	valueSlice := o.values[vi]
 	// Pass through looking for an exact match
@@ -100,13 +145,21 @@ func (o *Octree) FindClosest(r, g, b uint8) value {
 			closest = v
 		}
 	}
-	// We found something in this block, but we might be close enough to an
-	// edge that the next block holds things that are actually closer, check
-	// TODO: Implement a way to figure out what block edge is the closest to
-	// this pixel and compute the distance to it
 	if closest != nil {
-		return *closest
+		// We found something in this block, but we might be close
+		// enough to an edge that the next block holds things that are
+		// actually closer, check where our boundary ends
+		vMin, vMax := o.findBlockMinMax(vi)
+		minDist2 := o.findMinDist2ToBoundary(r, g, b, vMin, vMax)
+		if closestDist2 < minDist2 {
+			// nothing outside of this block could be closer than
+			// what we found, so we're safe to return it
+			return *closest
+		}
 	}
+	// TODO: We should start by checking the 26-neighbors of this block,
+	// and then possibly expand to bigger and bigger regions, rather than
+	// going straight to brute force.
 	// No exact match, start with brute-force search
 	for _, values := range o.values {
 		for _, v := range values {
